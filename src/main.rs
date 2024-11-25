@@ -8,11 +8,12 @@ use hyper::{Request, Response};
 use hyper_tungstenite::{tungstenite, HyperWebsocket};
 use hyper_util::rt::TokioIo;
 use tungstenite::Message;
+use vega_lite_5::Showable;
+use vega_lite_5::Vegalite;
 
 type Error = Box<dyn std::error::Error + Send + Sync + 'static>;
 
-const INDEX_JS_DATA: &[u8] = include_bytes!("static/index.js");
-const INDEX_HTML_DATA: &[u8] = include_bytes!("static/index.html");
+const STATIC_FILES: &[(&str, &[u8])] = &include!(concat!(env!("OUT_DIR"), "/static_files.rs"));
 
 #[derive(Default, Debug, serde::Deserialize, serde::Serialize)]
 struct VegaPoint {
@@ -57,11 +58,18 @@ fn make_vega_data(objects: &[Object]) -> VegaDisplay {
 /// Handle a HTTP or WebSocket request.
 async fn handle_request(mut request: Request<Incoming>) -> Result<Response<Full<Bytes>>, Error> {
     log::info!("{:?}", request);
-    if request.uri() == "/index.html" || request.uri() == "/" {
-        return Ok(Response::new(Full::<Bytes>::from(INDEX_HTML_DATA)));
-    } else if request.uri() == "/index.js" || request.uri() == "/" {
-        return Ok(Response::new(Full::<Bytes>::from(INDEX_JS_DATA)));
-    } else if request.uri() == "/ws" {
+
+    for s in STATIC_FILES.iter() {
+        log::info!("checking {} vs {}", request.uri(), s.0);
+        if request.uri() == "/" && s.0 == "/index.html" {
+            return Ok(Response::new(Full::<Bytes>::from(s.1)));
+        }
+        if request.uri() == s.0 {
+            return Ok(Response::new(Full::<Bytes>::from(s.1)));
+        }
+    }
+
+    if request.uri() == "/ws" {
         if hyper_tungstenite::is_upgrade_request(&request) {
             let (response, websocket) = hyper_tungstenite::upgrade(&mut request, None)?;
 
@@ -178,6 +186,13 @@ async fn main() -> Result<(), Error> {
 
     let mut http = hyper::server::conn::http1::Builder::new();
     http.keep_alive(true);
+
+    //let vl = Vegalite {
+    //    description: Some("Plot".to_string()),
+    //    ..Default::default()
+    //};
+
+    //println!("wrote to {:?}", vl.to_string()?);
 
     loop {
         let (stream, _) = listener.accept().await?;
